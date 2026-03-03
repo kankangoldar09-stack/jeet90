@@ -1,0 +1,5 @@
+{
+  "name": "INDIANREELS",
+  "description": "A vibrant short-video platform inspired by Instagram Reels, featuring smooth animations and a modern social interface.",
+  "requestFramePermissions": ["camera", "microphone"]
+}
