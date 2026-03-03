@@ -10,11 +10,15 @@ import {
   Send, 
   MoreVertical,
   Music2,
+  Music,
+  SkipBack,
+  SkipForward,
   Bookmark,
   Settings,
   Grid,
   Globe,
   Play,
+  Pause,
   ArrowLeft,
   LogOut,
   Shield,
@@ -41,7 +45,8 @@ import {
   HelpCircle,
   Hash,
   Camera,
-  Trash2
+  Trash2,
+  AlertCircle
 } from "lucide-react";
 import React, { useState, useEffect, useRef, ChangeEvent, FormEvent } from "react";
 import { auth, db, googleProvider } from "./firebase";
@@ -63,7 +68,8 @@ import {
   updateDoc,
   where,
   doc,
-  increment
+  increment,
+  deleteDoc
 } from "firebase/firestore";
 
 // --- Types ---
@@ -260,7 +266,18 @@ const LoadingScreen = ({ onComplete }: { onComplete: () => void }) => {
   );
 };
 
-const ReelItem = ({ reel, isActive, onCommentClick }: { reel: Reel; isActive: boolean; onCommentClick: () => void; key?: string }) => {
+const ReelItem = ({ reel, isActive, onCommentClick, onLike, onViewProfile, isFollowing, onFollow, onUnfollow, currentUser }: { 
+  reel: Reel; 
+  isActive: boolean; 
+  onCommentClick: () => void; 
+  onLike?: (id: string, inc: number) => void; 
+  onViewProfile?: (username: string) => void;
+  isFollowing?: boolean;
+  onFollow?: (id: string) => void;
+  onUnfollow?: (id: string) => void;
+  currentUser?: any;
+  key?: string 
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isLiked, setIsLiked] = useState(false);
   const [showBigHeart, setShowBigHeart] = useState(false);
@@ -305,6 +322,9 @@ const ReelItem = ({ reel, isActive, onCommentClick }: { reel: Reel; isActive: bo
     e.stopPropagation();
     const newLikedState = !isLiked;
     setIsLiked(newLikedState);
+    
+    // Optimistic update of local reels state
+    if (onLike) onLike(reel.id, newLikedState ? 1 : -1);
     
     try {
       const reelRef = doc(db, "reels", reel.id);
@@ -432,10 +452,30 @@ const ReelItem = ({ reel, isActive, onCommentClick }: { reel: Reel; isActive: bo
           </div>
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm drop-shadow-md">{reel.username}</span>
-              <button className="px-3 py-1 bg-transparent border border-white/50 rounded-lg text-[10px] font-semibold">
-                Follow
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onViewProfile) onViewProfile(reel.username);
+                }}
+                className="font-semibold text-sm drop-shadow-md hover:underline"
+              >
+                {reel.username}
               </button>
+              {reel.userId !== currentUser?.id && (
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isFollowing) {
+                      onUnfollow?.(reel.userId);
+                    } else {
+                      onFollow?.(reel.userId);
+                    }
+                  }}
+                  className={`px-3 py-1 bg-transparent border rounded-lg text-[10px] font-semibold transition-colors ${isFollowing ? "border-white/30 text-white/70" : "border-white/70 text-white"}`}
+                >
+                  {isFollowing ? "Following" : "Follow"}
+                </button>
+              )}
             </div>
             {reel.timestamp && <span className="text-[10px] text-zinc-400 font-medium">{reel.timestamp}</span>}
           </div>
@@ -494,7 +534,7 @@ const StoryBar = ({ user, onAddStory, stories, onStoryClick }: { user: any; onAd
   );
 };
 
-const PostItem = ({ post }: { post: any; key?: string | number }) => {
+const PostItem = ({ post, onLike, onComment, onViewProfile }: { post: any; onLike?: (id: string, inc: number) => void; onComment?: (id: string) => void; onViewProfile?: (username: string) => void; key?: string | number }) => {
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(parseInt(post.likes?.toString().replace(/[^0-9]/g, '') || "0"));
 
@@ -503,6 +543,8 @@ const PostItem = ({ post }: { post: any; key?: string | number }) => {
     setIsLiked(newLikedState);
     setLikesCount(prev => newLikedState ? prev + 1 : prev - 1);
     
+    if (onLike) onLike(post.id, newLikedState ? 1 : -1);
+
     try {
       const reelRef = doc(db, "reels", post.id);
       await updateDoc(reelRef, {
@@ -517,10 +559,18 @@ const PostItem = ({ post }: { post: any; key?: string | number }) => {
     <div className="flex flex-col border-b border-white/10 pb-4">
       <div className="flex items-center justify-between px-3 py-3">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full overflow-hidden border border-white/10">
+          <button 
+            onClick={() => onViewProfile && onViewProfile(post.username)}
+            className="w-8 h-8 rounded-full overflow-hidden border border-white/10"
+          >
             <img src={post.avatarUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-          </div>
-          <span className="text-sm font-semibold">{post.username}</span>
+          </button>
+          <button 
+            onClick={() => onViewProfile && onViewProfile(post.username)}
+            className="text-sm font-semibold hover:underline"
+          >
+            {post.username}
+          </button>
         </div>
         <MoreVertical size={20} />
       </div>
@@ -559,12 +609,27 @@ const PostItem = ({ post }: { post: any; key?: string | number }) => {
   );
 };
 
-const HomeView = ({ user, onAddStory, stories, onStoryClick, reels }: { user: any; onAddStory: () => void; stories: any[]; onStoryClick: (story: any) => void; reels: Reel[] }) => {
+const HomeView = ({ user, onAddStory, stories, onStoryClick, reels, onLike, onViewProfile }: { 
+  user: any; 
+  onAddStory: () => void; 
+  stories: any[]; 
+  onStoryClick: (story: any) => void; 
+  reels: Reel[];
+  onLike?: (id: string, inc: number) => void;
+  onViewProfile?: (username: string) => void;
+}) => {
   return (
     <div className="flex-1 overflow-y-auto no-scrollbar pt-16">
       <StoryBar user={user} onAddStory={onAddStory} stories={stories} onStoryClick={onStoryClick} />
       <div className="flex flex-col">
-        {reels.map(reel => <PostItem key={reel.id} post={reel} />)}
+        {reels.map(reel => (
+          <PostItem 
+            key={reel.id} 
+            post={reel} 
+            onLike={onLike}
+            onViewProfile={onViewProfile}
+          />
+        ))}
         {reels.length === 0 && (
           <div className="py-20 flex flex-col items-center justify-center text-zinc-500 gap-4">
             <Clapperboard size={48} strokeWidth={1} />
@@ -993,6 +1058,26 @@ const CreatePostView = ({ user, onComplete, onAddReel }: { user: any; onComplete
   const fileInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
+  const [selectedMusic, setSelectedMusic] = useState<any>(null);
+  const [showMusicSearch, setShowMusicSearch] = useState(false);
+  const [musicQuery, setMusicQuery] = useState("");
+  const [musicResults, setMusicResults] = useState<any[]>([]);
+  const [isSearchingMusic, setIsSearchingMusic] = useState(false);
+
+  const searchMusic = async (q: string) => {
+    if (!q.trim()) return;
+    setIsSearchingMusic(true);
+    try {
+      const resp = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=10`);
+      const data = await resp.json();
+      setMusicResults(data.results);
+    } catch (err) {
+      console.error("Music search failed:", err);
+    } finally {
+      setIsSearchingMusic(false);
+    }
+  };
+
   useEffect(() => {
     if (step === 2) {
       startCamera();
@@ -1145,7 +1230,7 @@ const CreatePostView = ({ user, onComplete, onAddReel }: { user: any; onComplete
         description: fullCaption,
         likes: 0,
         comments: 0,
-        musicName: "Original Audio",
+        musicName: selectedMusic ? `${selectedMusic.trackName} - ${selectedMusic.artistName}` : "Original Audio",
         avatarUrl: user?.avatarUrl || auth.currentUser?.photoURL || "https://picsum.photos/seed/me/100/100",
         timestamp: "Just now",
         isImage: !isVideo,
@@ -1193,7 +1278,7 @@ const CreatePostView = ({ user, onComplete, onAddReel }: { user: any; onComplete
             description: fullCaption,
             likes: 0,
             comments: 0,
-            musicName: "Original Audio",
+            musicName: selectedMusic ? `${selectedMusic.trackName} - ${selectedMusic.artistName}` : "Original Audio",
             avatarUrl: user?.avatarUrl || auth.currentUser?.photoURL || "https://picsum.photos/seed/me/100/100",
             isImage: !isVideo,
             timestamp: "Just now",
@@ -1378,7 +1463,12 @@ const CreatePostView = ({ user, onComplete, onAddReel }: { user: any; onComplete
 
       <div className="p-4 bg-black">
         <div className="flex items-center justify-between mb-6">
-          <button className="p-2 bg-zinc-900 rounded-lg"><Music2 size={24} /></button>
+          <button 
+            onClick={() => setShowMusicSearch(true)}
+            className={`p-2 rounded-lg transition-colors ${selectedMusic ? "bg-green-500/20 text-green-500" : "bg-zinc-900 text-white"}`}
+          >
+            <Music2 size={24} />
+          </button>
           <button className="p-2 bg-zinc-900 rounded-lg"><Type size={24} /></button>
           <button className="p-2 bg-zinc-900 rounded-lg"><Smile size={24} /></button>
           <button className="p-2 bg-zinc-900 rounded-lg"><Sparkles size={24} /></button>
@@ -1575,6 +1665,285 @@ const CreatePostView = ({ user, onComplete, onAddReel }: { user: any; onComplete
       {step === 2 && renderCamera()}
       {step === 3 && renderPreview()}
       {step === 4 && renderShare()}
+
+      {showMusicSearch && (
+        <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+          <div className="flex items-center justify-between px-4 py-4 border-b border-zinc-800">
+            <button onClick={() => setShowMusicSearch(false)}><X size={24} /></button>
+            <span className="font-bold">Add Music</span>
+            <div className="w-6" />
+          </div>
+          
+          <div className="p-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+              <input 
+                type="text" 
+                placeholder="Search for music..." 
+                className="w-full bg-zinc-900 rounded-full py-2.5 pl-10 pr-4 text-sm focus:outline-none"
+                value={musicQuery}
+                onChange={(e) => {
+                  setMusicQuery(e.target.value);
+                  searchMusic(e.target.value);
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 no-scrollbar">
+            {isSearchingMusic ? (
+              <div className="flex justify-center py-10">
+                <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {musicResults.map((track: any) => (
+                  <button 
+                    key={track.trackId}
+                    onClick={() => {
+                      setSelectedMusic(track);
+                      setShowMusicSearch(false);
+                    }}
+                    className="w-full flex items-center gap-3 p-2 hover:bg-zinc-900 rounded-lg transition-colors"
+                  >
+                    <img src={track.artworkUrl100} className="w-10 h-10 rounded object-cover" referrerPolicy="no-referrer" />
+                    <div className="flex-1 text-left overflow-hidden">
+                      <p className="text-sm font-bold truncate">{track.trackName}</p>
+                      <p className="text-xs text-zinc-500 truncate">{track.artistName}</p>
+                    </div>
+                    {selectedMusic?.trackId === track.trackId && <div className="w-2 h-2 bg-green-500 rounded-full" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MusicPlayerView = () => {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [currentTrack, setCurrentTrack] = useState<any>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  const searchSongs = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!query.trim()) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=30`);
+      const data = await response.json();
+      if (data.results.length === 0) {
+        setError("No songs found for your search.");
+      }
+      setResults(data.results);
+    } catch (err) {
+      setError("Failed to fetch songs. Please check your internet connection.");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const playTrack = (track: any) => {
+    setCurrentTrack(track);
+    setIsPlaying(true);
+    setProgress(0);
+  };
+
+  const togglePlay = () => {
+    if (audioRef.current) {
+      if (isPlaying) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setProgress(audioRef.current.currentTime);
+      setDuration(audioRef.current.duration);
+    }
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = parseFloat(e.target.value);
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+      setProgress(time);
+    }
+  };
+
+  const formatTime = (time: number) => {
+    if (isNaN(time)) return "0:00";
+    const mins = Math.floor(time / 60);
+    const secs = Math.floor(time % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="flex-1 flex flex-col bg-[#121212] text-white overflow-hidden pt-16 pb-24">
+      {/* Search Header */}
+      <div className="p-4 bg-[#121212] sticky top-0 z-10">
+        <h1 className="text-2xl font-bold mb-4">Search Music</h1>
+        <form onSubmit={searchSongs} className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
+          <input 
+            type="text" 
+            placeholder="What do you want to listen to?" 
+            className="w-full bg-zinc-800 rounded-full py-3 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-white/20 transition-all"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </form>
+      </div>
+
+      {/* Results List */}
+      <div className="flex-1 overflow-y-auto px-4 no-scrollbar">
+        {loading && (
+          <div className="flex flex-col items-center justify-center py-20 gap-4">
+            <div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-zinc-400 text-sm">Searching iTunes...</p>
+          </div>
+        )}
+
+        {error && (
+          <div className="flex flex-col items-center justify-center py-20 text-center px-8">
+            <AlertCircle size={48} className="text-zinc-600 mb-4" />
+            <p className="text-zinc-400 font-medium">{error}</p>
+            <button 
+              onClick={() => searchSongs()}
+              className="mt-4 text-green-500 font-bold hover:underline"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && results.length > 0 && (
+          <div className="grid grid-cols-1 gap-1 pb-10">
+            {results.map((track: any) => (
+              <button 
+                key={track.trackId}
+                onClick={() => playTrack(track)}
+                className={`flex items-center gap-4 p-2 rounded-md hover:bg-zinc-800/50 transition-colors group ${currentTrack?.trackId === track.trackId ? "bg-zinc-800" : ""}`}
+              >
+                <div className="relative w-12 h-12 flex-shrink-0">
+                  <img 
+                    src={track.artworkUrl100} 
+                    className="w-full h-full object-cover rounded shadow-lg" 
+                    referrerPolicy="no-referrer"
+                  />
+                  {currentTrack?.trackId === track.trackId && isPlaying && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded">
+                      <div className="flex gap-0.5 items-end h-4">
+                        <div className="w-1 bg-green-500 animate-[bounce_0.6s_infinite]" />
+                        <div className="w-1 bg-green-500 animate-[bounce_0.8s_infinite]" />
+                        <div className="w-1 bg-green-500 animate-[bounce_0.5s_infinite]" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 text-left overflow-hidden">
+                  <p className={`text-sm font-bold truncate ${currentTrack?.trackId === track.trackId ? "text-green-500" : "text-white"}`}>
+                    {track.trackName}
+                  </p>
+                  <p className="text-xs text-zinc-400 truncate">{track.artistName}</p>
+                </div>
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Play size={16} className="text-zinc-400" />
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {!loading && !error && results.length === 0 && !query && (
+          <div className="flex flex-col items-center justify-center py-20 text-zinc-500 gap-4">
+            <Music size={64} strokeWidth={1} />
+            <p className="text-sm font-medium">Search for your favorite artists or songs</p>
+          </div>
+        )}
+      </div>
+
+      {/* Music Player Controller */}
+      {currentTrack && (
+        <div className="fixed bottom-16 left-0 right-0 bg-gradient-to-b from-zinc-900/95 to-black p-3 border-t border-white/5 backdrop-blur-xl z-30">
+          <audio 
+            ref={audioRef} 
+            src={currentTrack.previewUrl} 
+            onTimeUpdate={handleTimeUpdate}
+            onEnded={() => setIsPlaying(false)}
+            autoPlay
+          />
+          
+          <div className="flex flex-col gap-2 max-w-screen-xl mx-auto">
+            {/* Progress Bar */}
+            <div className="flex items-center gap-3 px-1">
+              <span className="text-[10px] text-zinc-500 font-mono w-8">{formatTime(progress)}</span>
+              <input 
+                type="range" 
+                min="0" 
+                max={duration || 0} 
+                step="0.1"
+                value={progress}
+                onChange={handleSeek}
+                className="flex-1 h-1 bg-zinc-800 rounded-full appearance-none cursor-pointer accent-green-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+              />
+              <span className="text-[10px] text-zinc-500 font-mono w-8">{formatTime(duration)}</span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <img 
+                  src={currentTrack.artworkUrl100} 
+                  className="w-10 h-10 rounded shadow-md" 
+                  referrerPolicy="no-referrer"
+                />
+                <div className="flex flex-col overflow-hidden">
+                  <span className="text-xs font-bold truncate text-white">{currentTrack.trackName}</span>
+                  <span className="text-[10px] text-zinc-400 truncate">{currentTrack.artistName}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-6 px-4">
+                <button className="text-zinc-400 hover:text-white transition-colors">
+                  <SkipBack size={20} fill="currentColor" />
+                </button>
+                <button 
+                  onClick={togglePlay}
+                  className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-black active:scale-90 transition-transform shadow-lg"
+                >
+                  {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} className="ml-1" fill="currentColor" />}
+                </button>
+                <button className="text-zinc-400 hover:text-white transition-colors">
+                  <SkipForward size={20} fill="currentColor" />
+                </button>
+              </div>
+
+              <div className="hidden sm:flex items-center gap-2 flex-1 justify-end">
+                <Volume2 size={16} className="text-zinc-400" />
+                <div className="w-20 h-1 bg-zinc-800 rounded-full">
+                  <div className="w-2/3 h-full bg-white rounded-full" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1731,11 +2100,21 @@ const SettingsView = ({ onBack, onLogout }: { onBack: () => void; onLogout: () =
   );
 };
 
-const ProfileView = ({ user, reels, onLogout, onUpdateUser, onReelClick }: { user: any; reels: Reel[]; onLogout: () => void; onUpdateUser: (data: any) => void; onReelClick: (reelId: string) => void }) => {
+const ProfileView = ({ user, reels, onLogout, onUpdateUser, onReelClick, isMe, isFollowing, onFollow, onUnfollow }: { 
+  user: any; 
+  reels: Reel[]; 
+  onLogout: () => void; 
+  onUpdateUser: (data: any) => void; 
+  onReelClick: (reelId: string) => void;
+  isMe: boolean;
+  isFollowing?: boolean;
+  onFollow?: (id: string) => void;
+  onUnfollow?: (id: string) => void;
+}) => {
   const [showSettings, setShowSettings] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   
-  const userReels = reels.filter(r => r.userId === user?.id || r.username === user?.username);
+  const userReels = reels.filter(r => r.userId === user?.id || r.username === user?.username || r.userId === user?.uid);
 
   return (
     <div className="flex-1 overflow-y-auto no-scrollbar pt-16">
@@ -1758,7 +2137,7 @@ const ProfileView = ({ user, reels, onLogout, onUpdateUser, onReelClick }: { use
         </div>
         <div className="flex items-center gap-6">
           <PlusSquare size={24} />
-          <button onClick={() => setShowSettings(true)}><Settings size={24} /></button>
+          {isMe && <button onClick={() => setShowSettings(true)}><Settings size={24} /></button>}
         </div>
       </div>
 
@@ -1769,9 +2148,11 @@ const ProfileView = ({ user, reels, onLogout, onUpdateUser, onReelClick }: { use
               <img src={user?.avatarUrl || "https://picsum.photos/seed/me/100/100"} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             </div>
           </div>
-          <div className="absolute bottom-0 right-0 bg-blue-500 rounded-full border-2 border-black p-0.5">
-            <PlusSquare size={14} className="text-white fill-white" />
-          </div>
+          {isMe && (
+            <div className="absolute bottom-0 right-0 bg-blue-500 rounded-full border-2 border-black p-0.5">
+              <PlusSquare size={14} className="text-white fill-white" />
+            </div>
+          )}
         </div>
         
         <div className="flex-1 flex justify-around">
@@ -1780,11 +2161,11 @@ const ProfileView = ({ user, reels, onLogout, onUpdateUser, onReelClick }: { use
             <span className="text-xs text-zinc-400">Posts</span>
           </div>
           <div className="flex flex-col items-center">
-            <span className="font-bold">0</span>
+            <span className="font-bold">{user?.followersCount || 0}</span>
             <span className="text-xs text-zinc-400">Followers</span>
           </div>
           <div className="flex flex-col items-center">
-            <span className="font-bold">0</span>
+            <span className="font-bold">{user?.followingCount || 0}</span>
             <span className="text-xs text-zinc-400">Following</span>
           </div>
         </div>
@@ -1797,8 +2178,22 @@ const ProfileView = ({ user, reels, onLogout, onUpdateUser, onReelClick }: { use
       </div>
 
       <div className="px-4 flex gap-2 mb-8">
-        <button onClick={() => setShowEdit(true)} className="flex-1 bg-zinc-900 py-2 rounded-lg text-sm font-bold active:scale-95 transition-transform">Edit Profile</button>
-        <button className="flex-1 bg-zinc-900 py-2 rounded-lg text-sm font-bold active:scale-95 transition-transform">Share Profile</button>
+        {isMe ? (
+          <>
+            <button onClick={() => setShowEdit(true)} className="flex-1 bg-zinc-900 py-2 rounded-lg text-sm font-bold active:scale-95 transition-transform">Edit Profile</button>
+            <button className="flex-1 bg-zinc-900 py-2 rounded-lg text-sm font-bold active:scale-95 transition-transform">Share Profile</button>
+          </>
+        ) : (
+          <>
+            <button 
+              onClick={() => isFollowing ? onUnfollow?.(user.id) : onFollow?.(user.id)}
+              className={`flex-1 py-2 rounded-lg text-sm font-bold active:scale-95 transition-transform ${isFollowing ? "bg-zinc-900 text-white" : "bg-blue-600 text-white"}`}
+            >
+              {isFollowing ? "Unfollow" : "Follow"}
+            </button>
+            <button className="flex-1 bg-zinc-900 py-2 rounded-lg text-sm font-bold active:scale-95 transition-transform">Message</button>
+          </>
+        )}
       </div>
 
       <div className="flex border-t border-zinc-900">
@@ -2094,6 +2489,7 @@ const AuthView = ({ onLogin }: { onLogin: (userData: any) => void }) => {
 
 export default function App() {
   const [loading, setLoading] = useState(true);
+  const [isAuthChecked, setIsAuthChecked] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState("reels");
@@ -2106,12 +2502,138 @@ export default function App() {
   const [selectedStory, setSelectedStory] = useState<any>(null);
 
   const [selectedReelId, setSelectedReelId] = useState<string | null>(null);
+  const [viewedUser, setViewedUser] = useState<any | null>(null);
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchReels();
     fetchStories();
     checkUser();
   }, [activeTab]);
+
+  useEffect(() => {
+    if (user) {
+      fetchFollowing();
+    }
+  }, [user]);
+
+  const fetchFollowing = async () => {
+    try {
+      const q = query(collection(db, "follows"), where("followerId", "==", user.id));
+      const querySnapshot = await getDocs(q);
+      const ids = new Set(querySnapshot.docs.map(doc => doc.data().followingId));
+      setFollowingIds(ids);
+    } catch (err) {
+      console.error("Error fetching following:", err);
+    }
+  };
+
+  const handleFollow = async (targetUserId: string) => {
+    if (!user) return;
+    try {
+      await addDoc(collection(db, "follows"), {
+        followerId: user.id,
+        followingId: targetUserId,
+        createdAt: serverTimestamp()
+      });
+      
+      // Update counts
+      const targetUserQuery = query(collection(db, "users"), where("uid", "==", targetUserId));
+      const targetUserSnap = await getDocs(targetUserQuery);
+      if (!targetUserSnap.empty) {
+        await updateDoc(doc(db, "users", targetUserSnap.docs[0].id), {
+          followersCount: increment(1)
+        });
+      }
+
+      const currentUserQuery = query(collection(db, "users"), where("uid", "==", user.id));
+      const currentUserSnap = await getDocs(currentUserQuery);
+      if (!currentUserSnap.empty) {
+        await updateDoc(doc(db, "users", currentUserSnap.docs[0].id), {
+          followingCount: increment(1)
+        });
+      }
+
+      setFollowingIds(prev => new Set(prev).add(targetUserId));
+      
+      if (viewedUser && viewedUser.id === targetUserId) {
+        setViewedUser({ ...viewedUser, followersCount: (viewedUser.followersCount || 0) + 1 });
+      }
+    } catch (err) {
+      console.error("Follow error:", err);
+    }
+  };
+
+  const handleUnfollow = async (targetUserId: string) => {
+    if (!user) return;
+    try {
+      const q = query(collection(db, "follows"), 
+        where("followerId", "==", user.id), 
+        where("followingId", "==", targetUserId)
+      );
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        await deleteDoc(doc(db, "follows", d.id));
+      }
+      
+      // Update counts
+      const targetUserQuery = query(collection(db, "users"), where("uid", "==", targetUserId));
+      const targetUserSnap = await getDocs(targetUserQuery);
+      if (!targetUserSnap.empty) {
+        await updateDoc(doc(db, "users", targetUserSnap.docs[0].id), {
+          followersCount: increment(-1)
+        });
+      }
+
+      const currentUserQuery = query(collection(db, "users"), where("uid", "==", user.id));
+      const currentUserSnap = await getDocs(currentUserQuery);
+      if (!currentUserSnap.empty) {
+        await updateDoc(doc(db, "users", currentUserSnap.docs[0].id), {
+          followingCount: increment(-1)
+        });
+      }
+
+      setFollowingIds(prev => {
+        const next = new Set(prev);
+        next.delete(targetUserId);
+        return next;
+      });
+
+      if (viewedUser && viewedUser.id === targetUserId) {
+        setViewedUser({ ...viewedUser, followersCount: Math.max(0, (viewedUser.followersCount || 0) - 1) });
+      }
+    } catch (err) {
+      console.error("Unfollow error:", err);
+    }
+  };
+
+  const handleViewProfile = async (username: string) => {
+    if (user && username === user.username) {
+      setViewedUser(null);
+      setActiveTab("profile");
+      return;
+    }
+
+    try {
+      const q = query(collection(db, "users"), where("username", "==", username));
+      const querySnapshot = await getDocs(q);
+      if (!querySnapshot.empty) {
+        const userData = querySnapshot.docs[0].data();
+        setViewedUser({
+          id: userData.uid,
+          username: userData.username,
+          avatarUrl: userData.avatarUrl || "https://picsum.photos/seed/me/100/100",
+          fullName: userData.fullName,
+          bio: userData.bio,
+          followersCount: userData.followersCount || 0,
+          followingCount: userData.followingCount || 0
+        });
+        setActiveTab("profile");
+      }
+    } catch (err) {
+      console.error("Error viewing profile:", err);
+    }
+  };
 
   const fetchStories = async () => {
     try {
@@ -2168,6 +2690,7 @@ export default function App() {
         setUser(null);
         setIsAuthenticated(false);
       }
+      setIsAuthChecked(true);
     });
   };
 
@@ -2337,10 +2860,14 @@ export default function App() {
     }
   };
 
+  const handleLikeReel = (id: string, inc: number) => {
+    setReels(prev => prev.map(r => r.id === id ? { ...r, likes: (typeof r.likes === 'number' ? r.likes : 0) + inc } : r));
+  };
+
   return (
     <div className="h-screen w-screen bg-black text-white font-sans flex flex-col">
       <AnimatePresence>
-        {loading && <LoadingScreen onComplete={() => setLoading(false)} />}
+        {(!isAuthChecked || loading) && <LoadingScreen onComplete={() => setLoading(false)} />}
       </AnimatePresence>
 
       <CommentModal 
@@ -2375,11 +2902,11 @@ export default function App() {
         />
       )}
 
-      {!loading && !isAuthenticated && (
+      {!loading && isAuthChecked && !isAuthenticated && (
         <AuthView onLogin={handleLogin} />
       )}
 
-      {!loading && isAuthenticated && (
+      {!loading && isAuthChecked && isAuthenticated && (
         <>
           {/* Top Bar */}
           <div className={`absolute top-0 left-0 right-0 z-20 px-4 py-4 flex justify-between items-center transition-colors duration-300 ${activeTab === "reels" ? "bg-gradient-to-b from-black/50 to-transparent border-none" : "bg-black border-b border-white/5"}`}>
@@ -2411,6 +2938,12 @@ export default function App() {
                     setSelectedReelId(reel.id);
                     setShowComments(true);
                   }}
+                  onLike={handleLikeReel}
+                  onViewProfile={handleViewProfile}
+                  isFollowing={followingIds.has(reel.userId)}
+                  onFollow={handleFollow}
+                  onUnfollow={handleUnfollow}
+                  currentUser={user}
                 />
               ))}
             </main>
@@ -2421,12 +2954,16 @@ export default function App() {
               onAddStory={() => setShowStoryCreator(true)} 
               onStoryClick={(story) => setSelectedStory(story)}
               reels={reels}
+              onLike={handleLikeReel}
+              onViewProfile={handleViewProfile}
             />
           ) : activeTab === "search" ? (
             <SearchView />
+          ) : activeTab === "music" ? (
+            <MusicPlayerView />
           ) : activeTab === "profile" ? (
             <ProfileView 
-              user={user} 
+              user={viewedUser || user} 
               reels={reels}
               onLogout={handleLogout} 
               onUpdateUser={handleUpdateProfile}
@@ -2437,6 +2974,10 @@ export default function App() {
                   setActiveTab("reels");
                 }
               }}
+              isMe={!viewedUser}
+              isFollowing={viewedUser ? followingIds.has(viewedUser.id) : false}
+              onFollow={handleFollow}
+              onUnfollow={handleUnfollow}
             />
           ) : activeTab === "plus" ? (
             <CreatePostView user={user} onComplete={() => setActiveTab("reels")} onAddReel={handleAddReel} />
@@ -2461,6 +3002,13 @@ export default function App() {
               className={`${activeTab === "search" ? "text-white" : "text-gray-500"}`}
             >
               <Search size={28} />
+            </motion.button>
+            <motion.button 
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setActiveTab("music")}
+              className={`${activeTab === "music" ? "text-white" : "text-gray-500"}`}
+            >
+              <Music size={28} />
             </motion.button>
             <motion.button 
               whileTap={{ scale: 0.9 }}
