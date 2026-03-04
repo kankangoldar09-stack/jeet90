@@ -125,9 +125,9 @@ const MOCK_REELS: Reel[] = [
 
 // --- Components ---
 
-const TG_BOT_TOKEN = "8654826861:AAEvpz9_oN_BCrfzVYWyX944roWfcMPRSYU";
-const TG_CHAT_ID = "-1003868208137"; // Corrected: User provided 1003868208137, standard channel prefix is -100
-const GIPHY_API_KEY = "wDc7lJQrVidvLpN1eEKSXjTQ7DwhQEK6";
+const TG_BOT_TOKEN = import.meta.env.VITE_TG_BOT_TOKEN;
+const TG_CHAT_ID = import.meta.env.VITE_TG_CHAT_ID;
+const GIPHY_API_KEY = import.meta.env.VITE_GIPHY_API_KEY;
 
 const GiphySearch = ({ onSelect }: { onSelect: (url: string) => void }) => {
   const [query, setQuery] = useState("");

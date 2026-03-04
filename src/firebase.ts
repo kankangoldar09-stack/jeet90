@@ -3,13 +3,13 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { initializeFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCejh0GSpSDpaUgBew84u13MVIOFvPkK0s",
-  authDomain: "indian-social-media-d422b.firebaseapp.com",
-  projectId: "indian-social-media-d422b",
-  storageBucket: "indian-social-media-d422b.firebasestorage.app",
-  messagingSenderId: "391399808689",
-  appId: "1:391399808689:web:4b9a3a0e64eb3ec5ed0c90",
-  measurementId: "G-VFXDP7VMRR"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 const app = initializeApp(firebaseConfig);
