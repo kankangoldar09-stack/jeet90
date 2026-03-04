@@ -582,6 +582,7 @@ const PostItem = ({ post, onLike, onComment, onViewProfile }: { post: any; onLik
             src={post.videoUrl} 
             className="w-full h-full object-cover" 
             controls
+            loop
             playsInline
             crossOrigin="anonymous"
           />
@@ -1503,7 +1504,7 @@ const CreatePostView = ({ user, onComplete, onAddReel }: { user: any; onComplete
             {coverImage ? (
               <img src={coverImage} className="w-full h-full object-cover" />
             ) : fileType.startsWith("video") ? (
-              <video src={preview!} className="w-full h-full object-cover" muted crossOrigin="anonymous" />
+              <video src={preview!} className="w-full h-full object-cover" loop muted playsInline crossOrigin="anonymous" />
             ) : (
               <img src={preview!} className="w-full h-full object-cover" />
             )}
@@ -2212,7 +2213,7 @@ const ProfileView = ({ user, reels, onLogout, onUpdateUser, onReelClick, isMe, i
             {reel.isImage ? (
               <img src={reel.videoUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             ) : (
-              <video src={reel.videoUrl} className="w-full h-full object-cover" />
+              <video src={reel.videoUrl} className="w-full h-full object-cover" loop muted playsInline />
             )}
             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <Play size={14} className="text-white fill-white" />
